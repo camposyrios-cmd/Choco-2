@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chocó: Memoria Sumergida</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #060f0a; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: Georgia, serif; }
+
+  #gadget {
+    position: relative;
+    width: 100%;
+    max-width: 1100px;
+    height: 100vh;
+    max-height: 700px;
+    overflow: hidden;
+    background: #071410;
+    cursor: crosshair;
+    border-radius: 4px;
+  }
+  #bg-layer {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(ellipse at 15% 25%, #0d2e1a 0%, transparent 55%),
+      radial-gradient(ellipse at 85% 65%, #071a28 0%, transparent 55%),
+      radial-gradient(ellipse at 50% 80%, #0a1e10 0%, transparent 50%),
+      #071410;
+  }
+  .grid-lines {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.018) 1px, transparent 1px);
+    background-size: 45px 45px;
+  }
+  #canvas-fog {
+    position: absolute; inset: 0;
+    pointer-events: none;
+    z-index: 3;
+  }
+  #nodes-layer {
+    position: absolute; inset: 0;
+    z-index: 1;
+  }
+  .node {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    cursor: pointer;
+    z-index: 2;
+  }
+  .node-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: rgba(100,220,160,0.12);
+    border: 1.5px solid rgba(100,220,160,0.2);
+    transition: all 0.35s ease;
+    position: relative;
+  }
+  .node-dot::after {
+    content: '';
+    position: absolute;
+    inset: -5px;
+    border-radius: 50%;
+    border: 1px solid rgba(100,220,160,0.15);
+    animation: pulse 2.8s ease-in-out infinite;
+    opacity: 0;
+  }
+  .node.revealed .node-dot {
+    background: rgba(100,220,160,0.75);
+    border-color: rgba(100,220,160,1);
+    box-shadow: 0 0 10px rgba(100,220,160,0.5), 0 0 20px rgba(100,220,160,0.2);
+  }
+  .node.revealed .node-dot::after { opacity: 1; }
+  .node-year {
+    position: absolute;
+    top: 15px; left: 50%;
+    transform: translateX(-50%);
+    font-size: 8.5px;
+    color: rgba(100,220,160,0);
+    white-space: nowrap;
+    font-family: 'Courier New', monospace;
+    letter-spacing: 0.5px;
+    transition: color 0.5s ease;
+    pointer-events: none;
+  }
+  .node.revealed .node-year { color: rgba(100,220,160,0.75); }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 0.6; }
+    50% { transform: scale(2.2); opacity: 0; }
+  }
+
+  /* SIDE PANEL */
+  #panel {
+    position: absolute;
+    top: 0; right: -360px;
+    width: 340px; height: 100%;
+    background: rgba(4, 18, 12, 0.95);
+    border-left: 1px solid rgba(100,220,160,0.18);
+    z-index: 10;
+    padding: 28px 22px 28px 42px;
+    transition: right 0.45s cubic-bezier(0.23, 1, 0.32, 1);
+    display: flex; flex-direction: column;
+    backdrop-filter: blur(16px);
+  }
+  #panel.open { right: 0; }
+
+  #close-btn {
+    position: absolute;
+    top: 18px; left: 14px;
+    background: none; border: none;
+    color: rgba(100,220,160,0.4);
+    font-size: 20px; cursor: pointer;
+    padding: 4px 8px; line-height: 1;
+    font-family: monospace;
+    transition: color 0.2s;
+  }
+  #close-btn:hover { color: rgba(100,220,160,0.9); }
+
+  #panel-eyebrow {
+    font-size: 9px;
+    color: rgba(100,220,160,0.45);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    font-family: 'Courier New', monospace;
+    margin-bottom: 8px;
+  }
+  #panel-year {
+    font-size: 28px;
+    color: rgba(100,220,160,0.85);
+    font-family: 'Courier New', monospace;
+    font-weight: normal;
+    letter-spacing: 2px;
+    margin-bottom: 16px;
+    line-height: 1;
+  }
+  #panel-title {
+    font-size: 16px;
+    color: #d8f0e4;
+    line-height: 1.6;
+    font-family: Georgia, serif;
+    font-weight: normal;
+    flex: 1;
+    margin-bottom: 24px;
+    border-left: 2px solid rgba(100,220,160,0.25);
+    padding-left: 14px;
+  }
+  #panel-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 11px 18px;
+    border: 1px solid rgba(100,220,160,0.35);
+    color: rgba(100,220,160,0.85);
+    text-decoration: none;
+    font-size: 11px;
+    font-family: 'Courier New', monospace;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    border-radius: 3px;
+    transition: all 0.2s;
+    background: rgba(100,220,160,0.04);
+    align-self: flex-start;
+  }
+  #panel-link:hover {
+    background: rgba(100,220,160,0.12);
+    border-color: rgba(100,220,160,0.65);
+    color: rgba(100,220,160,1);
+  }
+
+  /* TITLE */
+  #title-bar {
+    position: absolute;
+    top: 18px; left: 18px;
+    z-index: 5;
+    pointer-events: none;
+  }
+  #title-bar h1 {
+    font-size: 12px;
+    color: rgba(100,220,160,0.55);
+    font-family: 'Courier New', monospace;
+    letter-spacing: 2.5px;
+    font-weight: normal;
+    text-transform: uppercase;
+  }
+  #title-bar p {
+    font-size: 9.5px;
+    color: rgba(255,255,255,0.18);
+    font-family: 'Courier New', monospace;
+    margin-top: 3px;
+    letter-spacing: 1px;
+  }
+
+  #counter {
+    position: absolute;
+    top: 18px; right: 18px;
+    z-index: 5;
+    font-size: 9.5px;
+    color: rgba(100,220,160,0.35);
+    font-family: 'Courier New', monospace;
+    letter-spacing: 1px;
+    pointer-events: none;
+  }
+
+  #hint {
+    position: absolute;
+    bottom: 22px; left: 50%;
+    transform: translateX(-50%);
+    z-index: 5;
+    color: rgba(255,255,255,0.18);
+    font-size: 10px;
+    font-family: 'Courier New', monospace;
+    letter-spacing: 3px;
+    text-align: center;
+    pointer-events: none;
+    white-space: nowrap;
+    transition: opacity 0.5s;
+  }
+
+  #reveal-all-btn {
+    position: absolute;
+    bottom: 22px; right: 18px;
+    z-index: 6;
+    background: none;
+    border: 1px solid rgba(100,220,160,0.2);
+    color: rgba(100,220,160,0.35);
+    font-size: 9px;
+    font-family: 'Courier New', monospace;
+    letter-spacing: 1.5px;
+    padding: 6px 10px;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: all 0.2s;
+    text-transform: uppercase;
+  }
+  #reveal-all-btn:hover {
+    border-color: rgba(100,220,160,0.5);
+    color: rgba(100,220,160,0.7);
+  }
+
+  @media (max-width: 600px) {
+    #panel { width: 100%; right: -100%; border-left: none; border-top: 1px solid rgba(100,220,160,0.18); top: auto; bottom: -100%; height: 55%; }
+    #panel.open { right: 0; bottom: 0; top: auto; }
+  }
+</style>
+</head>
+<body>
+<div id="gadget">
+  <div id="bg-layer"><div class="grid-lines"></div></div>
+  <div id="nodes-layer"></div>
+  <canvas id="canvas-fog"></canvas>
+  <div id="title-bar">
+    <h1>Chocó: Memoria Sumergida</h1>
+    <p>Desliza el cursor para revelar la historia</p>
+  </div>
+  <div id="counter"><span id="revealed-count">0</span>&nbsp;/&nbsp;<span id="total-count">0</span>&nbsp;eventos revelados</div>
+  <div id="hint">&#9670;&nbsp;&nbsp;DESLIZA PARA DESCUBRIR&nbsp;&nbsp;&#9670;</div>
+  <button id="reveal-all-btn" onclick="revealAll()">Revelar todo</button>
+  <div id="panel">
+    <button id="close-btn" onclick="closePanel()">&#x2715;</button>
+    <div style="flex:1; display:flex; flex-direction:column; justify-content:center;">
+      <div id="panel-eyebrow">Evento documentado</div>
+      <div id="panel-year"></div>
+      <div id="panel-title"></div>
+    </div>
+    <a id="panel-link" href="#" target="_blank" rel="noopener">&#8599;&nbsp;&nbsp;Ver fuente original</a>
+  </div>
+</div>
+
+<script>
+const events = [
+  {year:"1970",title:"FARC domina la región del Urabá",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=8a110a763b8b1a01_21176782808375b0&tid=a99d9ab440ea7784&tei=0&utm_source=timeline_deep_link"},
+  {year:"1974",title:"Frente 5 de las FARC consolida control en Pavarandó y Porroso",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=b48d056574a0bf1a_21176782808375b0&tid=a99d9ab440ea7784&tei=1&utm_source=timeline_deep_link"},
+  {year:"1975–79",title:"Frente Quinto de las FARC establece presencia en la zona de Bajirá",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=cc00fa3466f30f2e_21176782808375b0&tid=a99d9ab440ea7784&tei=78&utm_source=timeline_deep_link"},
+  {year:"1979–81",title:"Frente 57 de las FARC y el Cartel de Medellín hacen incursiones en Chocó",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=7b807568f524b32b_21176782808375b0&tid=a99d9ab440ea7784&tei=77&utm_source=timeline_deep_link"},
+  {year:"1981",title:"El M-19 realiza incursión armada en Bagadó y Tadó",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=f820c99d6a9342f3_21176782808375b0&tid=a99d9ab440ea7784&tei=2&utm_source=timeline_deep_link"},
+  {year:"1980–89",title:"FARC-EP y ELN expanden su presencia en Chocó",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=1469ac5b50d3265a_21176782808375b0&tid=a99d9ab440ea7784&tei=79&utm_source=timeline_deep_link"},
+  {year:"1984",title:"Hombres armados hacen incursiones en áreas cercanas al resguardo Wounaan",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=f2b1a579f0fb6ffa_21176782808375b0&tid=a99d9ab440ea7784&tei=3&utm_source=timeline_deep_link"},
+  {year:"1987–88",title:"FARC-EP inicia reclutamiento forzado de jóvenes en la Comunidad de Santa Martha de Curiche",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=f2b1a579f0fb6ffa_21176782808375b0&tid=a99d9ab440ea7784&tei=80&utm_source=timeline_deep_link"},
+  {year:"1990",title:"Paramilitares (ACCU/AUC) y guerrillas (ELN/FARC) establecen presencia y generan conflicto en Chocó",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=7b807568f524b32b_21176782808375b0&tid=a99d9ab440ea7784&tei=4&utm_source=timeline_deep_link"},
+  {year:"1992",title:"FARC realiza toma armada del casco urbano de Juradó",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=7b807568f524b32b_21176782808375b0&tid=a99d9ab440ea7784&tei=5&utm_source=timeline_deep_link"},
+  {year:"1993",title:"Grupos paramilitares desplazan familias del Resguardo de Tanela al territorio Eyákera",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=1eade3365e1e0aa1_21176782808375b0&tid=a99d9ab440ea7784&tei=6&utm_source=timeline_deep_link"},
+  {year:"1994",title:"FARC asesina a empresaria y recluta menores en Juradó, causando desplazamiento",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=7b807568f524b32b_21176782808375b0&tid=a99d9ab440ea7784&tei=7&utm_source=timeline_deep_link"},
+  {year:"1994–99",title:"ACCU llega a la zona microfocalizada e inicia estrategia de apropiación de tierras",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=26b695d73cad2356_21176782808375b0&tid=a99d9ab440ea7784&tei=70&utm_source=timeline_deep_link"},
+  {year:"1995",title:"Bloque Elmer Cárdenas y otros grupos paramilitares se forman, escalando conflicto con FARC",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=7b807568f524b32b_21176782808375b0&tid=a99d9ab440ea7784&tei=8&utm_source=timeline_deep_link"},
+  {year:"1995–96",title:"Grupos paramilitares entran al territorio de Turbo y Mutatá",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=cc00fa3466f30f2e_21176782808375b0&tid=a99d9ab440ea7784&tei=82&utm_source=timeline_deep_link"},
+  {year:"1995–99",title:"AUC entra al Chocó, iniciando confrontaciones violentas con FARC en la región del Darién",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=1469ac5b50d3265a_21176782808375b0&tid=a99d9ab440ea7784&tei=71&utm_source=timeline_deep_link"},
+  {year:"1995–04",title:"Período de conflicto intenso y concentración de tierras por Juan Carlos Sierra Aguilar",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=b48d056574a0bf1a_21176782808375b0&tid=a99d9ab440ea7784&tei=86&utm_source=timeline_deep_link"},
+  {year:"1995–18",title:"Tribunal establece el período de influencia armada en la zona: 1995 a 2018",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=e05a2b2931474b1b_21176782808375b0&tid=a99d9ab440ea7784&tei=73&utm_source=timeline_deep_link"},
+  {year:"Feb 1995",title:"Enfrentamientos en Bajirá entre el Frente 34 de las FARC y el Ejército colombiano",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=f1737bef59406247_21176782808375b0&tid=a99d9ab440ea7784&tei=9&utm_source=timeline_deep_link"},
+  {year:"1996",title:"Grupos paramilitares expanden operaciones: incursiones, masacres y desplazamientos masivos",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=1eade3365e1e0aa1_21176782808375b0&tid=a99d9ab440ea7784&tei=10&utm_source=timeline_deep_link"},
+  {year:"Feb 1996",title:"Grupo paramilitar 'La 70' incursiona en Unguía, desplazando a la familia Betancur-Bedoya",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=cc00fa3466f30f2e_21176782808375b0&tid=a99d9ab440ea7784&tei=11&utm_source=timeline_deep_link"},
+  {year:"Mar 1996",title:"Paramilitares cometen la masacre de Villa Arteaga",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=cc00fa3466f30f2e_21176782808375b0&tid=a99d9ab440ea7784&tei=12&utm_source=timeline_deep_link"},
+  {year:"May 1996",title:"Paramilitares ACCU/AUC cometen la masacre de Coredó, asesinando campesinos y causando desplazamiento",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=7b807568f524b32b_21176782808375b0&tid=a99d9ab440ea7784&tei=13&utm_source=timeline_deep_link"},
+  {year:"Jul 1996",title:"Paramilitares cometen masacres en Mutatá y Villarteaga",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=cc00fa3466f30f2e_21176782808375b0&tid=a99d9ab440ea7784&tei=14&utm_source=timeline_deep_link"},
+  {year:"Nov 1996",title:"Paramilitares cometen segunda masacre en Mutatá",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=cc00fa3466f30f2e_21176782808375b0&tid=a99d9ab440ea7784&tei=15&utm_source=timeline_deep_link"},
+  {year:"1996–02",title:"Desplazamiento forzado masivo y despojo de tierras ligados a proyectos económicos paramilitares en Urabá",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=26b695d73cad2356_21176782808375b0&tid=a99d9ab440ea7784&tei=81&utm_source=timeline_deep_link"},
+  {year:"1997",title:"Grupos paramilitares expanden operaciones y FARC comete asesinatos, aumentando la violencia",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=7b807568f524b32b_21176782808375b0&tid=a99d9ab440ea7784&tei=18&utm_source=timeline_deep_link"},
+  {year:"Ene 1997",title:"Toma de Riosucio por FARC desencadena éxodo masivo de desplazados hacia campamento en Pavarandó",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=1469ac5b50d3265a_21176782808375b0&tid=a99d9ab440ea7784&tei=17&utm_source=timeline_deep_link"},
+  {year:"Ene 1997",title:"Presión paramilitar obliga a familias a abandonar o vender sus propiedades bajo coacción",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=26b695d73cad2356_21176782808375b0&tid=a99d9ab440ea7784&tei=19&utm_source=timeline_deep_link"},
+  {year:"May 1997",title:"Paramilitares cometen la masacre de Pavarandó",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=cc00fa3466f30f2e_21176782808375b0&tid=a99d9ab440ea7784&tei=20&utm_source=timeline_deep_link"},
+  {year:"1997–03",title:"Bloque Elmer Cárdenas impone bloqueo económico causando crisis alimentaria",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=cccd5453d30bfda4_21176782808375b0&tid=a99d9ab440ea7784&tei=72&utm_source=timeline_deep_link"},
+  {year:"1997–06",title:"FARC y paramilitares disputan control territorial causando terror y desplazamiento masivo",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=cccd5453d30bfda4_21176782808375b0&tid=a99d9ab440ea7784&tei=74&utm_source=timeline_deep_link"},
+  {year:"1997–99",title:"Familias desplazadas de los ríos alto Bochoromacito por el conflicto armado",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=f820c99d6a9342f3_21176782808375b0&tid=a99d9ab440ea7784&tei=16&utm_source=timeline_deep_link"},
+  {year:"1998",title:"Bloque Pacífico instala retén ilegal en 'Cabo Marzo'",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=f2b1a579f0fb6ffa_21176782808375b0&tid=a99d9ab440ea7784&tei=21&utm_source=timeline_deep_link"},
+  {year:"Feb 1998",title:"Paramilitares cometen tercera masacre en Mutatá",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=cc00fa3466f30f2e_21176782808375b0&tid=a99d9ab440ea7784&tei=22&utm_source=timeline_deep_link"},
+  {year:"Dic 1998",title:"Se formaliza venta forzada de las tierras de la familia Escobar, materializando el despojo",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=8a110a763b8b1a01_21176782808375b0&tid=a99d9ab440ea7784&tei=23&utm_source=timeline_deep_link"},
+  {year:"1999",title:"Miembro del Bloque Elmer Cárdenas amenaza con abuso sexual a gobernadora del Resguardo Cuti",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=cccd5453d30bfda4_21176782808375b0&tid=a99d9ab440ea7784&tei=24&utm_source=timeline_deep_link"},
+  {year:"Ago 1999",title:"Bloque Elmer Cárdenas de las AUC asesina indígenas, incluyendo al líder Porfirio Chaito",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=7b807568f524b32b_21176782808375b0&tid=a99d9ab440ea7784&tei=25&utm_source=timeline_deep_link"},
+  {year:"Oct 1999",title:"FARC-EP y UC-ELN perpetran masacre en Vereda Villa Luz, forzando abandono de tierras de la familia Domico",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=e05a2b2931474b1b_21176782808375b0&tid=a99d9ab440ea7784&tei=26&utm_source=timeline_deep_link"},
+  {year:"Dic 1999",title:"FARC realiza segunda toma armada de Juradó, causando desplazamiento masivo",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=7b807568f524b32b_21176782808375b0&tid=a99d9ab440ea7784&tei=27&utm_source=timeline_deep_link"},
+  {year:"2000",title:"Grupos armados, incluidos bloques AUC, realizan incursiones, asesinatos y desplazamientos",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=1eade3365e1e0aa1_21176782808375b0&tid=a99d9ab440ea7784&tei=28&utm_source=timeline_deep_link"},
+  {year:"2000",title:"La familia Romero es incluida en el Registro Único de Víctimas (RUV) por desplazamiento forzado",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=f1737bef59406247_21176782808375b0&tid=a99d9ab440ea7784&tei=29&utm_source=timeline_deep_link"},
+  {year:"2000–03",title:"Pico de disputa territorial entre grupos armados genera desplazamientos masivos y desaparición de pueblos",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=1469ac5b50d3265a_21176782808375b0&tid=a99d9ab440ea7784&tei=84&utm_source=timeline_deep_link"},
+  {year:"2001",title:"AUC destruye puente del río San Juan e instala retenes con guerrillas, confinando a la población",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=f820c99d6a9342f3_21176782808375b0&tid=a99d9ab440ea7784&tei=30&utm_source=timeline_deep_link"},
+  {year:"Ene 2001",title:"FARC asesina al alcalde de Juradó, Henry Perea Torres",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=7b807568f524b32b_21176782808375b0&tid=a99d9ab440ea7784&tei=31&utm_source=timeline_deep_link"},
+  {year:"Feb 2001",title:"Frente 57 de las FARC asesina al líder indígena Armando Achito",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=f2b1a579f0fb6ffa_21176782808375b0&tid=a99d9ab440ea7784&tei=32&utm_source=timeline_deep_link"},
+  {year:"2002",title:"Autodefensas imponen bloqueos de alimentos a la población civil",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=7b807568f524b32b_21176782808375b0&tid=a99d9ab440ea7784&tei=33&utm_source=timeline_deep_link"},
+  {year:"Oct 2002",title:"Incursión armada causa desplazamiento; FARC-EP ataca la comunidad de Farallones",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=f820c99d6a9342f3_21176782808375b0&tid=a99d9ab440ea7784&tei=34&utm_source=timeline_deep_link"},
+  {year:"2002–12",title:"Personas vinculadas a FARC realizan tala ilegal en el resguardo",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=f2b1a579f0fb6ffa_21176782808375b0&tid=a99d9ab440ea7784&tei=85&utm_source=timeline_deep_link"},
+  {year:"2002–16",title:"Frente 57 de las FARC vinculado a cultivos ilícitos en el Resguardo",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=1eade3365e1e0aa1_21176782808375b0&tid=a99d9ab440ea7784&tei=76&utm_source=timeline_deep_link"},
+  {year:"2003",title:"Líder paramilitar 'el Alemán' invitado por un empresario a discutir proyecto palmero",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=26b695d73cad2356_21176782808375b0&tid=a99d9ab440ea7784&tei=35&utm_source=timeline_deep_link"},
+  {year:"2004",title:"Grupos armados causan desplazamiento y asesinan a un habitante indígena",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=1eade3365e1e0aa1_21176782808375b0&tid=a99d9ab440ea7784&tei=36&utm_source=timeline_deep_link"},
+  {year:"2004–06",title:"Grupos paramilitares en Urabá se desmovilizaron en medio de violencia intensa",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=26b695d73cad2356_21176782808375b0&tid=a99d9ab440ea7784&tei=83&utm_source=timeline_deep_link"},
+  {year:"2005",title:"La familia Domico descubre que sus tierras fueron vendidas a un ex jefe paramilitar",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=e05a2b2931474b1b_21176782808375b0&tid=a99d9ab440ea7784&tei=37&utm_source=timeline_deep_link"},
+  {year:"2006–07",title:"FARC enfrenta nuevos grupos ilegales armados para recuperar el control territorial",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=7b807568f524b32b_21176782808375b0&tid=a99d9ab440ea7784&tei=75&utm_source=timeline_deep_link"},
+  {year:"Ago 2006",title:"Bloque Elmer Cárdenas de las AUC se desmovilizan; surgen 'Águilas Negras' y 'Urabeños'",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=7b807568f524b32b_21176782808375b0&tid=a99d9ab440ea7784&tei=38&utm_source=timeline_deep_link"},
+  {year:"2008",title:"Surgen AGC y 'Los Rastrojos'; desplazamiento masivo y asesinato de líder comunitario",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=1469ac5b50d3265a_21176782808375b0&tid=a99d9ab440ea7784&tei=39&utm_source=timeline_deep_link"},
+  {year:"2009",title:"'Los Urabeños' consolidan su presencia en Chocó",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=cccd5453d30bfda4_21176782808375b0&tid=a99d9ab440ea7784&tei=40&utm_source=timeline_deep_link"},
+  {year:"2009",title:"ELN asesina a Alirio, causando desplazamiento de la comunidad Afro del resguardo",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=f820c99d6a9342f3_21176782808375b0&tid=a99d9ab440ea7784&tei=41&utm_source=timeline_deep_link"},
+  {year:"Jun 2009",title:"'Los Rastrojos' y autodefensas irrumpen en un pueblo: secuestran y abusan sexualmente de una menor",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=1469ac5b50d3265a_21176782808375b0&tid=a99d9ab440ea7784&tei=42&utm_source=timeline_deep_link"},
+  {year:"2010",title:"Es asesinado Atanasio Palacios Moreno, delegado municipal",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=1469ac5b50d3265a_21176782808375b0&tid=a99d9ab440ea7784&tei=43&utm_source=timeline_deep_link"},
+  {year:"2010",title:"Frente 57 de las FARC expande presencia hacia Gilgal",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=cccd5453d30bfda4_21176782808375b0&tid=a99d9ab440ea7784&tei=44&utm_source=timeline_deep_link"},
+  {year:"2010",title:"Cultivos ilícitos en el resguardo generan fumigaciones y amenazas contra la comunidad indígena",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=f820c99d6a9342f3_21176782808375b0&tid=a99d9ab440ea7784&tei=45&utm_source=timeline_deep_link"},
+  {year:"Jun 2010",title:"'El Alemán' testifica sobre su reunión con el empresario Jaime Sierra Moreno",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=26b695d73cad2356_21176782808375b0&tid=a99d9ab440ea7784&tei=46&utm_source=timeline_deep_link"},
+  {year:"Oct 2010",title:"Frente 57 de las FARC incursiona en territorio de Eyákera",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=1eade3365e1e0aa1_21176782808375b0&tid=a99d9ab440ea7784&tei=47&utm_source=timeline_deep_link"},
+  {year:"Nov 2010",title:"'Los Urabeños' presionan a la comunidad Embera para abandonar proceso de reclamación de tierras",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=1eade3365e1e0aa1_21176782808375b0&tid=a99d9ab440ea7784&tei=48&utm_source=timeline_deep_link"},
+  {year:"2011",title:"Defensoría del Pueblo confirma presencia de FARC y 'Los Urabeños' en el Darién Chocoano",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=cccd5453d30bfda4_21176782808375b0&tid=a99d9ab440ea7784&tei=49&utm_source=timeline_deep_link"},
+  {year:"2011",title:"Reinsertados del Elmer Cárdenas identifican fosas comunes cerca del resguardo",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=f2b1a579f0fb6ffa_21176782808375b0&tid=a99d9ab440ea7784&tei=50&utm_source=timeline_deep_link"},
+  {year:"Ago 2011",title:"ELN asesina al maestro Luis Armando Oki y amenaza a su familia",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=f820c99d6a9342f3_21176782808375b0&tid=a99d9ab440ea7784&tei=51&utm_source=timeline_deep_link"},
+  {year:"Dic 2012",title:"350 indígenas de Mondó son desplazados; comunidad Bochoromá hostigada por grupos armados",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=f820c99d6a9342f3_21176782808375b0&tid=a99d9ab440ea7784&tei=52&utm_source=timeline_deep_link"},
+  {year:"2013",title:"Conflicto intenso entre ELN, AGC y FARC genera desplazamiento, muertes civiles y daño ambiental",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=1eade3365e1e0aa1_21176782808375b0&tid=a99d9ab440ea7784&tei=53&utm_source=timeline_deep_link"},
+  {year:"Feb 2013",title:"Combates entre ELN y fuerzas militares en Bochoromá y zonas aledañas",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=f820c99d6a9342f3_21176782808375b0&tid=a99d9ab440ea7784&tei=54&utm_source=timeline_deep_link"},
+  {year:"Sep 2013",title:"El gobierno ordena fumigación aérea de cultivos de coca ilícita en la cuenca del río Cuti",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=cccd5453d30bfda4_21176782808375b0&tid=a99d9ab440ea7784&tei=55&utm_source=timeline_deep_link"},
+  {year:"Nov–Dic 2013",title:"Enfrentamientos entre AGC y ELN resultan en el confinamiento de 1.900 personas",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=1469ac5b50d3265a_21176782808375b0&tid=a99d9ab440ea7784&tei=56&utm_source=timeline_deep_link"},
+  {year:"2014",title:"El conflicto se intensifica con nueva fase de confrontación entre AGC y ELN",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=1469ac5b50d3265a_21176782808375b0&tid=a99d9ab440ea7784&tei=57&utm_source=timeline_deep_link"},
+  {year:"2014",title:"ELN instala minas antipersona en el bosque del resguardo",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=f820c99d6a9342f3_21176782808375b0&tid=a99d9ab440ea7784&tei=58&utm_source=timeline_deep_link"},
+  {year:"Abr 2015",title:"El Ejército captura al segundo al mando del ELN 'Piquiña' y rescata a un menor indígena",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=f820c99d6a9342f3_21176782808375b0&tid=a99d9ab440ea7784&tei=59&utm_source=timeline_deep_link"},
+  {year:"Jun 2015",title:"Policía encuentra dos menores indígenas del resguardo portando propaganda del ELN",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=f820c99d6a9342f3_21176782808375b0&tid=a99d9ab440ea7784&tei=60&utm_source=timeline_deep_link"},
+  {year:"Feb 2016",title:"El Ejército incauta armas y una bandera del ELN en el Resguardo de Bochoromá",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=f820c99d6a9342f3_21176782808375b0&tid=a99d9ab440ea7784&tei=61&utm_source=timeline_deep_link"},
+  {year:"Oct 2016",title:"ELN amenaza con quemar vehículos en la carretera Quibdó-Pereira",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=f820c99d6a9342f3_21176782808375b0&tid=a99d9ab440ea7784&tei=62&utm_source=timeline_deep_link"},
+  {year:"2017",title:"Asesinato del líder Aulio Isaramá y choques entre ELN y AGC desencadenan desplazamientos masivos",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=1469ac5b50d3265a_21176782808375b0&tid=a99d9ab440ea7784&tei=63&utm_source=timeline_deep_link"},
+  {year:"Sep 2017",title:"Miembros del Ejército acusan y amenazan al gobernador indígena de Alto Bochoromá",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=f820c99d6a9342f3_21176782808375b0&tid=a99d9ab440ea7784&tei=64&utm_source=timeline_deep_link"},
+  {year:"2018",title:"Un grupo armado amenaza a la familia Domico, forzando segundo abandono de sus tierras",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=e05a2b2931474b1b_21176782808375b0&tid=a99d9ab440ea7784&tei=65&utm_source=timeline_deep_link"},
+  {year:"2019",title:"Andersón Domico recibe amenazas en Dabeiba relacionadas con reclamación de tierras",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=e05a2b2931474b1b_21176782808375b0&tid=a99d9ab440ea7784&tei=66&utm_source=timeline_deep_link"},
+  {year:"Feb 2025",title:"Tribunal emite y amplía sentencia que protege los derechos territoriales de la familia Domico",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=6ca7aa82edad6214_21176782808375b0&tid=a99d9ab440ea7784&tei=67&utm_source=timeline_deep_link"},
+  {year:"Abr 2025",title:"Tribunal reconoce a las familias Rivera Higuita y Torres Varela como víctimas del conflicto armado",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=ab0de68a3055d4eb_21176782808375b0&tid=a99d9ab440ea7784&tei=68&utm_source=timeline_deep_link"},
+  {year:"May 2025",title:"Tribunal modula sentencia de restitución de tierras 010 tras solicitud de fiscal",link:"https://journaliststudio.google.com/pinpoint/document-view?collection=21176782808375b0&docid=ab0de68a3055d4eb_21176782808375b0&tid=a99d9ab440ea7784&tei=69&utm_source=timeline_deep_link"}
+];
+
+const gadget = document.getElementById('gadget');
+const nodesLayer = document.getElementById('nodes-layer');
+const canvas = document.getElementById('canvas-fog');
+const ctx = canvas.getContext('2d');
+const panel = document.getElementById('panel');
+const revealedCountEl = document.getElementById('revealed-count');
+const totalCountEl = document.getElementById('total-count');
+
+let isDrawing = false;
+let revealedNodes = new Set();
+let nodeElements = [];
+let positions = [];
+let shuffledEvents = [];
+
+function seededShuffle(arr, seed) {
+  const a = [...arr];
+  let s = seed;
+  for (let i = a.length - 1; i > 0; i--) {
+    s = (s * 1664525 + 1013904223) & 0xffffffff;
+    const j = Math.abs(s) % (i + 1);
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function resize() {
+  const w = gadget.offsetWidth;
+  const h = gadget.offsetHeight;
+  canvas.width = w;
+  canvas.height = h;
+  drawFog();
+  positionNodes(w, h);
+}
+
+function drawFog() {
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = 'rgba(4, 14, 22, 0.9)';
+  ctx.fillRect(0, 0, w, h);
+}
+
+function positionNodes(w, h) {
+  nodesLayer.innerHTML = '';
+  nodeElements = [];
+  positions = [];
+  revealedNodes = new Set();
+  revealedCountEl.textContent = '0';
+
+  shuffledEvents = seededShuffle(events, 42);
+
+  const margin = 50;
+  const usableW = w - margin * 2;
+  const usableH = h - margin * 2;
+  const total = shuffledEvents.length;
+  const cols = Math.ceil(Math.sqrt(total * (usableW / usableH)));
+  const rows = Math.ceil(total / cols);
+  const cellW = usableW / cols;
+  const cellH = usableH / rows;
+
+  shuffledEvents.forEach((ev, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const jx = (Math.random() - 0.5) * cellW * 0.55;
+    const jy = (Math.random() - 0.5) * cellH * 0.55;
+    const x = Math.max(margin, Math.min(w - margin, margin + col * cellW + cellW / 2 + jx));
+    const y = Math.max(margin, Math.min(h - margin, margin + row * cellH + cellH / 2 + jy));
+
+    positions.push({x, y});
+
+    const node = document.createElement('div');
+    node.className = 'node';
+    node.style.left = x + 'px';
+    node.style.top = y + 'px';
+    node.dataset.index = i;
+
+    const dot = document.createElement('div');
+    dot.className = 'node-dot';
+    const yr = document.createElement('div');
+    yr.className = 'node-year';
+    yr.textContent = ev.year;
+
+    node.appendChild(dot);
+    node.appendChild(yr);
+    node.addEventListener('click', () => {
+      if (revealedNodes.has(i)) openPanel(ev);
+    });
+    nodesLayer.appendChild(node);
+    nodeElements.push(node);
+  });
+
+  totalCountEl.textContent = total;
+}
+
+function openPanel(ev) {
+  document.getElementById('panel-year').textContent = ev.year;
+  document.getElementById('panel-title').textContent = ev.title;
+  document.getElementById('panel-link').href = ev.link;
+  panel.classList.add('open');
+}
+
+function closePanel() {
+  panel.classList.remove('open');
+}
+
+function revealAll() {
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  positions.forEach((pos, i) => {
+    if (!revealedNodes.has(i)) {
+      revealedNodes.add(i);
+      nodeElements[i].classList.add('revealed');
+    }
+  });
+  revealedCountEl.textContent = revealedNodes.size;
+  document.getElementById('hint').style.opacity = '0';
+}
+
+function reveal(x, y) {
+  ctx.globalCompositeOperation = 'destination-out';
+  const r = 45;
+  const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+  grad.addColorStop(0, 'rgba(0,0,0,1)');
+  grad.addColorStop(0.55, 'rgba(0,0,0,0.85)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+
+  positions.forEach((pos, i) => {
+    const dx = pos.x - x, dy = pos.y - y;
+    if (Math.sqrt(dx * dx + dy * dy) < r + 8 && !revealedNodes.has(i)) {
+      revealedNodes.add(i);
+      nodeElements[i].classList.add('revealed');
+      revealedCountEl.textContent = revealedNodes.size;
+      if (revealedNodes.size >= 4) document.getElementById('hint').style.opacity = '0';
+    }
+  });
+}
+
+function getPos(e) {
+  const rect = gadget.getBoundingClientRect();
+  if (e.touches) return {x: e.touches[0].clientX - rect.left, y: e.touches[0].clientY - rect.top};
+  return {x: e.clientX - rect.left, y: e.clientY - rect.top};
+}
+
+let lastX = 0, lastY = 0;
+
+gadget.addEventListener('mousedown', e => {
+  isDrawing = true;
+  const p = getPos(e); lastX = p.x; lastY = p.y;
+  reveal(p.x, p.y);
+});
+gadget.addEventListener('mouseup', () => isDrawing = false);
+gadget.addEventListener('mouseleave', () => isDrawing = false);
+gadget.addEventListener('mousemove', e => {
+  if (!isDrawing) return;
+  const p = getPos(e);
+  const steps = 6;
+  for (let i = 0; i <= steps; i++) reveal(lastX + (p.x - lastX) * i / steps, lastY + (p.y - lastY) * i / steps);
+  lastX = p.x; lastY = p.y;
+});
+gadget.addEventListener('touchstart', e => {
+  e.preventDefault(); isDrawing = true;
+  const p = getPos(e); lastX = p.x; lastY = p.y; reveal(p.x, p.y);
+}, {passive: false});
+gadget.addEventListener('touchend', () => isDrawing = false);
+gadget.addEventListener('touchmove', e => {
+  e.preventDefault(); if (!isDrawing) return;
+  const p = getPos(e);
+  const steps = 6;
+  for (let i = 0; i <= steps; i++) reveal(lastX + (p.x - lastX) * i / steps, lastY + (p.y - lastY) * i / steps);
+  lastX = p.x; lastY = p.y;
+}, {passive: false});
+
+let resizeTimer;
+window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(resize, 120); });
+resize();
+</script>
+</body>
+</html>
